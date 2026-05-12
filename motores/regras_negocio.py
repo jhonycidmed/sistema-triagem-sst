@@ -1,25 +1,19 @@
 def descobrir_treinamentos(exames_selecionados, riscos_selecionados, matriz_regras):
-    """
-    Só recomenda o treinamento se:
-    1. O Risco da regra foi selecionado pela atendente.
-    2. TODOS os exames necessários para aquele risco foram selecionados.
-    """
-    treinamentos_finais = []
+    treinamentos_obrigatorios = set()
     
-    set_exames_user = set(exames_selecionados)
-    set_riscos_user = set(riscos_selecionados)
-
+    # Padroniza as seleções para maiúsculo para garantir o match
+    exames_selecionados_upper = [str(e).upper().strip() for e in exames_selecionados]
+    riscos_selecionados_upper = [str(r).upper().strip() for r in riscos_selecionados]
+    
     for regra in matriz_regras:
-        nome_risco_regra = regra["risco"]
-        set_exames_regra = set(regra["exames_necessarios"])
-        
-        # CONDIÇÃO DE GATILHO: Risco presente E Combo de Exames completo
-        if nome_risco_regra in set_riscos_user:
-            if set_exames_regra.issubset(set_exames_user):
-                treino = regra["treinamento"]
-                # Ignora se estiver vazio ou com o texto de placeholder
-                if treino and "Nenhum curso" not in treino and str(treino).lower() != "nan":
-                    if treino not in treinamentos_finais:
-                        treinamentos_finais.append(treino)
-
-    return treinamentos_finais
+        # Verifica se o risco bate
+        if regra['risco'] in riscos_selecionados_upper:
+            necessarios = set(regra['exames_necessarios'])
+            selecionados = set(exames_selecionados_upper)
+            
+            # Se todos os necessários estiverem nos selecionados
+            if necessarios.issubset(selecionados):
+                if regra['treinamento'] and str(regra['treinamento']).lower() != 'nan':
+                    treinamentos_obrigatorios.add(regra['treinamento'])
+                
+    return sorted(list(treinamentos_obrigatorios))
