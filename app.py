@@ -81,7 +81,7 @@ if df_bruto is not None:
     
     # 1. PRIMEIRO O RISCO
     riscos_sel = st.multiselect(
-        "1. Selecione os Riscos:", 
+        "1. Selecione o Risco:", 
         options=lista_riscos, 
         key="campo_riscos",
         placeholder="Ex: RUIDO, ALTURA, CALOR..."
