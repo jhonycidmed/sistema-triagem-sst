@@ -5,11 +5,11 @@ import re
 from motores.processador_dados import carregar_planilha_exames, carregar_matriz_treinamentos
 from motores.regras_negocio import descobrir_treinamentos
 
-# --- FUNÇÃO AUXILIAR DE NORMALIZAÇÃO ---
+# --- FUNÇÃO DE NORMALIZAÇÃO ---
 def normalizar(texto):
     if not texto: return ""
     texto = str(texto).strip().upper()
-    # Remove acentos (Ex: Á -> A)
+    # Remove acentos
     texto = "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
     # Remove números iniciais (Ex: "1. CLINICO" -> "CLINICO")
     texto = re.sub(r'^\d+\.\s*', '', texto)
@@ -18,22 +18,34 @@ def normalizar(texto):
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Triagem CIDMED", layout="centered")
 
-# --- LÓGICA DE LIMPEZA ---
 def limpar_tudo():
     st.session_state.campo_exames = []
     st.session_state.campo_riscos = []
 
-# --- ESTILIZAÇÃO CSS ---
+# --- ESTILIZAÇÃO CSS (FOCO EM NÃO CORTAR TEXTO E CORES CIDMED) ---
 st.markdown("""
     <style>
+    /* Ajuste para as Tags (caixinhas azuis) aparecerem completas no Safari/iPhone */
+    [data-baseweb="tag"] {
+        background-color: #285f9f !important;
+        height: auto !important;
+        max-width: 100% !important;
+        padding: 5px 10px !important;
+        margin: 2px !important;
+    }
+    [data-baseweb="tag"] span {
+        color: white !important;
+        font-size: 14px !important;
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+    }
+    
+    /* Personalização das Caixas e Títulos */
     div[data-baseweb="select"] > div { border: 2px solid #285f9f !important; border-radius: 6px !important; }
-    [data-baseweb="tag"] { background-color: #285f9f !important; padding: 6px 12px !important; max-width: none !important; }
-    [data-baseweb="tag"] span { color: white !important; font-size: 15px !important; white-space: normal !important; }
-    .stMultiSelect label p { font-size: 24px !important; font-weight: bold !important; color: #285f9f !important; }
-    .texto-instrucao { font-size: 20px !important; color: #4F4F4F; margin-bottom: 20px; }
+    .stMultiSelect label p { font-size: 22px !important; font-weight: bold !important; color: #285f9f !important; }
     .titulo-results { font-size: 26px !important; font-weight: bold !important; color: #285f9f !important; text-decoration: underline; margin-top: 25px; }
-    .lista-treinamentos { list-style-type: disc; margin-top: 10px; padding-left: 25px; }
-    .lista-treinamentos li { font-size: 22px !important; color: #1e4675 !important; margin-bottom: 15px; line-height: 1.4; }
+    .lista-treinamentos li { font-size: 20px !important; color: #1e4675 !important; margin-bottom: 12px; line-height: 1.4; }
     .marca-agua { position: fixed; bottom: 15px; left: 15px; font-size: 11px; color: rgba(79, 79, 79, 0.4); pointer-events: none; }
     </style>
 """, unsafe_allow_html=True)
@@ -47,43 +59,49 @@ caminho_matriz = "bases_de_dados/matriz_ajustada.xlsx"
 df_bruto = carregar_planilha_exames(caminho_bruto)
 matriz_regras = carregar_matriz_treinamentos(caminho_matriz)
 
-# --- INTERFACE ---
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    try: st.image("assets/logo.png", use_container_width=True)
-    except: pass
-
-st.markdown("<h2 style='text-align: center; color: #285f9f;'>Triagem Inteligente de Treinamentos</h2>", unsafe_allow_html=True)
-st.markdown("<p class='texto-instrucao'>Combine os Riscos e Exames para identificar as obrigatoriedades.</p>", unsafe_allow_html=True)
-st.divider()
-
 if df_bruto is not None:
-    # CRIANDO DICIONÁRIOS DE TRADUÇÃO (PARA IGNORAR ACENTOS NO CÁLCULO)
-    # Mostra o nome original, mas o sistema "pensa" no nome limpo
-    mapa_exames = {nome: normalizar(nome) for nome in df_bruto['Nome Exame'].dropna().unique()}
-    mapa_riscos = {nome: normalizar(nome) for nome in df_bruto['Nome Risco'].dropna().unique()}
+    # Para facilitar a busca (ex: digitar "ruido" e achar "RUIDO"),
+    # as listas de seleção agora usam os nomes normalizados.
+    lista_riscos = sorted([normalizar(n) for n in df_bruto['Nome Risco'].dropna().unique()])
+    lista_exames = sorted([normalizar(n) for n in df_bruto['Nome Exame'].dropna().unique()])
 
-    lista_exames_display = sorted(mapa_exames.keys())
-    lista_riscos_display = sorted(mapa_riscos.keys())
-    
+    # Interface Visual
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        try: st.image("assets/logo.png", use_container_width=True)
+        except: pass
+
+    st.markdown("<h2 style='text-align: center; color: #285f9f;'>Triagem Inteligente</h2>", unsafe_allow_html=True)
+    st.divider()
+
     if st.session_state.get('campo_exames') or st.session_state.get('campo_riscos'):
-        st.button("Limpar campos e Nova Consulta", on_click=limpar_tudo, use_container_width=True)
+        st.button("Limpar Tudo e Nova Consulta", on_click=limpar_tudo, use_container_width=True)
 
-    # SELEÇÃO NA TELA
-    exames_sel = st.multiselect("1. Selecione os Exames:", options=lista_exames_display, key="campo_exames", placeholder="Ex: Clínico, Ruído...")
-    riscos_sel = st.multiselect("2. Selecione os Riscos:", options=lista_riscos_display, key="campo_riscos", placeholder="Ex: Ruído, Poeira...")
+    # --- ORDEM INVERTIDA CONFORME SOLICITADO ---
+    
+    # 1. PRIMEIRO O RISCO
+    riscos_sel = st.multiselect(
+        "1. Selecione os Riscos:", 
+        options=lista_riscos, 
+        key="campo_riscos",
+        placeholder="Ex: RUIDO, ALTURA, CALOR..."
+    )
+
+    # 2. SEGUNDO O EXAME
+    exames_sel = st.multiselect(
+        "2. Selecione os Exames:", 
+        options=lista_exames, 
+        key="campo_exames",
+        placeholder="Ex: CLINICO, AUDIOMETRIA..."
+    )
 
     if exames_sel and riscos_sel:
-        # TRADUÇÃO: Converte o que foi selecionado para a versão "Sem Acento" antes de mandar para o motor
-        exames_processar = [mapa_exames[e] for e in exames_sel]
-        riscos_processar = [mapa_riscos[r] for r in riscos_sel]
-        
         st.divider()
-        # Chama o motor passando as versões limpas
-        resultados = descobrir_treinamentos(exames_processar, riscos_processar, matriz_regras)
+        # O motor de regras usa a lógica de interseção (Gatilho Rápido)
+        resultados = descobrir_treinamentos(exames_sel, riscos_sel, matriz_regras)
         
         if resultados:
-            st.markdown("<p class='titulo-results'>Treinamentos Obrigatórios:</p>", unsafe_allow_html=True)
+            st.markdown("<p class='titulo-results'>Treinamentos Recomendados:</p>", unsafe_allow_html=True)
             html_lista = "<ul class='lista-treinamentos'>"
             for r in resultados:
                 if str(r).lower() != 'nan':
@@ -91,9 +109,9 @@ if df_bruto is not None:
             html_lista += "</ul>"
             st.markdown(html_lista, unsafe_allow_html=True)
         else:
-            st.warning("Nenhum treinamento vinculado a esta combinação específica.")
+            st.warning("Nenhum treinamento vinculado a esta combinação.")
             
-    elif exames_sel or riscos_sel:
-        st.info("💡 Continue selecionando: o sistema precisa do Exame e do Risco correspondente.")
+    elif riscos_sel or exames_sel:
+        st.info("💡 Continue a seleção: o sistema cruza o Risco com os Exames realizados.")
 else:
-    st.error("Erro ao carregar arquivos. Verifique se estão na pasta 'bases_de_dados'.")
+    st.error("Erro Crítico: Arquivos de base de dados não encontrados.")
