@@ -5,43 +5,25 @@ import re
 from motores.processador_dados import carregar_planilha_exames, carregar_matriz_treinamentos
 from motores.regras_negocio import descobrir_treinamentos
 
-# --- FUNÇÃO DE NORMALIZAÇÃO ---
+# --- NORMALIZAÇÃO ---
 def normalizar(texto):
     if not texto: return ""
     texto = str(texto).strip().upper()
-    # Remove acentos
     texto = "".join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
-    # Remove números iniciais (Ex: "1. CLINICO" -> "CLINICO")
     texto = re.sub(r'^\d+\.\s*', '', texto)
     return texto
 
-# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Triagem CIDMED", layout="centered")
 
 def limpar_tudo():
     st.session_state.campo_exames = []
     st.session_state.campo_riscos = []
 
-# --- ESTILIZAÇÃO CSS (FOCO EM NÃO CORTAR TEXTO E CORES CIDMED) ---
+# --- ESTILIZAÇÃO ---
 st.markdown("""
     <style>
-    /* Ajuste para as Tags (caixinhas azuis) aparecerem completas no Safari/iPhone */
-    [data-baseweb="tag"] {
-        background-color: #285f9f !important;
-        height: auto !important;
-        max-width: 100% !important;
-        padding: 5px 10px !important;
-        margin: 2px !important;
-    }
-    [data-baseweb="tag"] span {
-        color: white !important;
-        font-size: 14px !important;
-        white-space: normal !important;
-        overflow: visible !important;
-        text-overflow: unset !important;
-    }
-    
-    /* Personalização das Caixas e Títulos */
+    [data-baseweb="tag"] { background-color: #285f9f !important; height: auto !important; max-width: 100% !important; }
+    [data-baseweb="tag"] span { color: white !important; font-size: 14px !important; white-space: normal !important; }
     div[data-baseweb="select"] > div { border: 2px solid #285f9f !important; border-radius: 6px !important; }
     .stMultiSelect label p { font-size: 22px !important; font-weight: bold !important; color: #285f9f !important; }
     .titulo-results { font-size: 26px !important; font-weight: bold !important; color: #285f9f !important; text-decoration: underline; margin-top: 25px; }
@@ -60,12 +42,8 @@ df_bruto = carregar_planilha_exames(caminho_bruto)
 matriz_regras = carregar_matriz_treinamentos(caminho_matriz)
 
 if df_bruto is not None:
-    # Para facilitar a busca (ex: digitar "ruido" e achar "RUIDO"),
-    # as listas de seleção agora usam os nomes normalizados.
-    lista_riscos = sorted([normalizar(n) for n in df_bruto['Nome Risco'].dropna().unique()])
-    lista_exames = sorted([normalizar(n) for n in df_bruto['Nome Exame'].dropna().unique()])
-
-    # Interface Visual
+    lista_riscos_completa = sorted([normalizar(n) for n in df_bruto['Nome Risco'].dropna().unique()])
+    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         try: st.image("assets/logo.png", use_container_width=True)
@@ -77,27 +55,40 @@ if df_bruto is not None:
     if st.session_state.get('campo_exames') or st.session_state.get('campo_riscos'):
         st.button("Limpar Tudo e Nova Consulta", on_click=limpar_tudo, use_container_width=True)
 
-    # --- ORDEM INVERTIDA CONFORME SOLICITADO ---
-    
-    # 1. PRIMEIRO O RISCO
-    riscos_sel = st.multiselect(
-        "1. Selecione o Risco:", 
-        options=lista_riscos, 
-        key="campo_riscos",
-        placeholder="Ex: RUIDO, ALTURA, CALOR..."
-    )
+    # 1. SELECIONAR O RISCO
+    riscos_sel = st.multiselect("1. Selecione o Risco:", options=lista_riscos_completa, key="campo_riscos")
 
-    # 2. SEGUNDO O EXAME
+    # 2. FILTRO DINÂMICO DE EXAMES
+    lista_exames_filtrada = []
+    placeholder_exame = "Selecione o risco primeiro..."
+    
+    if riscos_sel:
+        exames_permitidos = set()
+        # Busca na matriz quais exames estão ligados aos riscos escolhidos
+        for regra in matriz_regras:
+            if regra['risco'] in riscos_sel:
+                for ex in regra['exames_necessarios']:
+                    exames_permitidos.add(ex)
+        
+        if exames_permitidos:
+            lista_exames_filtrada = sorted(list(exames_permitidos))
+            placeholder_exame = "Selecione os exames realizados..."
+        else:
+            # Caso o risco não tenha regra na matriz, mostra todos da base bruta para não travar o uso
+            lista_exames_filtrada = sorted([normalizar(n) for n in df_bruto['Nome Exame'].dropna().unique()])
+            placeholder_exame = "Risco sem regra específica. Mostrando todos os exames."
+
+    # 3. SELECIONAR O EXAME
     exames_sel = st.multiselect(
-        "2. Selecione os Exames:", 
-        options=lista_exames, 
+        "2. Selecione o Exame:", 
+        options=lista_exames_filtrada, 
         key="campo_exames",
-        placeholder="Ex: CLINICO, AUDIOMETRIA..."
+        placeholder=placeholder_exame,
+        disabled=not riscos_sel
     )
 
     if exames_sel and riscos_sel:
         st.divider()
-        # O motor de regras usa a lógica de interseção (Gatilho Rápido)
         resultados = descobrir_treinamentos(exames_sel, riscos_sel, matriz_regras)
         
         if resultados:
@@ -109,9 +100,9 @@ if df_bruto is not None:
             html_lista += "</ul>"
             st.markdown(html_lista, unsafe_allow_html=True)
         else:
-            st.warning("Nenhum treinamento vinculado a esta combinação.")
+            st.warning("A combinação de exames não gera treinamentos para este risco.")
             
-    elif riscos_sel or exames_sel:
-        st.info("💡 Continue a seleção: o sistema cruza o Risco com os Exames realizados.")
+    elif riscos_sel:
+        st.info("💡 Selecione o exame para validar a recomendação.")
 else:
-    st.error("Erro Crítico: Arquivos de base de dados não encontrados.")
+    st.error("Arquivos não encontrados.")
