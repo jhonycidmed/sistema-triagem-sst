@@ -1,1 +1,15 @@
+[theme]
+# A cor principal da CIDMED para os botões e destaques
+primaryColor = "#285f9f"
 
+# Fundo do sistema branco, para ficar limpo como o site
+backgroundColor = "#FFFFFF"
+
+# Fundo das caixas de seleção em um cinza/azul bem clarinho
+secondaryBackgroundColor = "#F4F6F9"
+
+# Cor do texto em um cinza chumbo escuro, igual ao nome "CIDMED" na logo
+textColor = "#4F4F4F"
+
+# Fonte sem serifa, moderna e corporativa
+font = "sans serif"
